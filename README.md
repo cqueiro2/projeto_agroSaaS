@@ -4,6 +4,6 @@ O objetivo é oferecer uma solução moderna, acessível e escalável para produ
 ---
 ## 🚀 Funcionalidades Principais 
 - 📊 **Dashboard interativo** com indicadores agrícolas
-- 🛰️ **Processamento de imagens (1D, profundidade e segmentação)**
+- 🛰️ **Processamento de imagens (2D, profundidade e segmentação)**
 - 🔔 **Alertas e notificações inteligentes** 
 - 🔐 **Autenticação e controle de usuários**
