@@ -6,7 +6,7 @@ O **AgroSaaS** é uma plataforma voltada para o agronegócio, desenvolvida para 
 
 Este repositório agora inclui um aplicativo em **Streamlit** para:
 - 📷 Receber foto do bezerro/bovino.
-- ✂️ Segmentar automaticamente o corpo do animal na imagem.
+- ✂️ Segmentar automaticamente o corpo do animal (máscara + refinamento GrabCut).
 - ⚖️ Estimar o peso com base em visão computacional + idade (0 a 450 dias).
 - 🐄 Sugerir raça provável (heurística) com confiança.
 - 📈 Exibir curva estimada de crescimento até 450 dias.
@@ -24,7 +24,8 @@ Abra o endereço exibido no terminal (normalmente `http://localhost:8501`).
 
 ## 📁 Estrutura principal
 
-- `app_bovino.py`: app web para análise bovina.
+- `app_bovino.py`: interface web Streamlit para análise bovina.
+- `bovino_analise.py`: motor de visão computacional (segmentação + peso + raça).
 - `1_DimensioImag/`: scripts de redimensionamento de imagens.
 - `2_depthImag/`: experimentos com mapa de profundidade.
 - `3_segmentarImg/`: scripts de segmentação de imagem.
