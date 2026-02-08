@@ -5,7 +5,7 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
-from bovino_analise import analisar_bovino, gerar_curva_crescimento
+from bovino_analise import analisar_bovino, detectar_backends, gerar_curva_crescimento
 
 
 st.set_page_config(page_title="AgroSaaS Bovino", page_icon="🐄", layout="wide")
@@ -26,16 +26,26 @@ def overlay_mascara(imagem_bgr: np.ndarray, mascara: np.ndarray) -> np.ndarray:
 
 st.title("🐄 AgroSaaS - Avaliação Bovina por Imagem")
 st.caption(
-    "Segmentação aprimorada + análise de características para estimativa de peso e raça "
+    "Segmentação + profundidade da imagem para estimar peso e raça (0–450 dias) "
     "com confiança calibrada até 90%."
 )
 
 with st.sidebar:
     st.header("Configuração da análise")
     idade = st.slider("Idade do animal (dias)", min_value=0, max_value=450, value=120)
+    info = detectar_backends()
+    st.markdown("### Backends detectados")
+    st.write(
+        {
+            "Segmentação": info["backend_segmentacao"],
+            "Profundidade": info["backend_profundidade"],
+            "PyTorch disponível": info["torch"],
+            "YOLO disponível": info["yolo"],
+        }
+    )
     st.markdown(
-        "**Observação técnica**: estimativa por visão computacional. "
-        "Use pesagem real e avaliação zootécnica para validação final."
+        "**Observação técnica**: esta análise é estimativa computacional. "
+        "Use pesagem real para validação final."
     )
 
 upload = st.file_uploader("Selecione uma foto do bovino", type=["jpg", "jpeg", "png"])
@@ -57,7 +67,10 @@ if upload:
         st.subheader("Animal isolado")
         st.image(cv2.cvtColor(resultado.imagem_segmentada, cv2.COLOR_BGR2RGB), use_container_width=True)
 
-    st.subheader("Visualização da área detectada")
+    st.subheader(f"Mapa de profundidade ({resultado.backend_profundidade})")
+    st.image(resultado.mapa_profundidade, clamp=True, use_container_width=True)
+
+    st.subheader("Overlay da área detectada")
     st.image(cv2.cvtColor(overlay_mascara(imagem_bgr, resultado.mascara), cv2.COLOR_BGR2RGB), use_container_width=True)
 
     m1, m2, m3, m4 = st.columns(4)
@@ -68,13 +81,16 @@ if upload:
 
     st.progress(resultado.confianca_peso, text="Nível de confiança da avaliação de peso")
 
-    st.subheader("Indicadores de qualidade da segmentação")
+    st.subheader("Indicadores da análise")
     st.write(
         {
             "Área relativa do corpo": resultado.area_relativa,
             "Perímetro relativo": resultado.perimetro_relativo,
             "Solidez do contorno": resultado.solidez,
             "Razão largura/altura do bounding box": resultado.razao_bbox,
+            "Profundidade relativa": resultado.profundidade_relativa,
+            "Backend de segmentação": resultado.backend_segmentacao,
+            "Backend de profundidade": resultado.backend_profundidade,
             "Faixa etária analisada": f"0-450 dias (idade informada: {idade})",
         }
     )
