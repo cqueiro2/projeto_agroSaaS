@@ -18,6 +18,8 @@ Este repositório agora inclui um aplicativo em **Streamlit** para:
 ```bash
 pip install -r requirement.txt
 streamlit run app_bovino.py
+# ou, para compatibilidade:
+python bovino_anlise.py
 ```
 
 Abra o endereço exibido no terminal (normalmente `http://localhost:8501`).
