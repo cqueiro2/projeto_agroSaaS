@@ -25,7 +25,7 @@ python bovino_anlise.py
 
 Abra o endereço exibido no terminal (normalmente `http://localhost:8501`).
 
-> Se você executar `python app_bovino.py` diretamente, o Streamlit pode mostrar aviso de `ScriptRunContext`. Use sempre `streamlit run app_bovino.py` ou `python bovino_anlise.py`.
+> Execução recomendada: `streamlit run app_bovino.py`.
 
 ## 📁 Estrutura principal
 
