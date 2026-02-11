@@ -7,9 +7,10 @@ O **AgroSaaS** é uma plataforma voltada para o agronegócio, desenvolvida para 
 Este repositório agora inclui um aplicativo em **Streamlit** para:
 - 📷 Receber foto do bezerro/bovino.
 - ✂️ Segmentar automaticamente o corpo do animal (cor + profundidade + GrabCut).
-- ⚖️ Estimar o peso com base em visão computacional + profundidade + idade (0 a 450 dias).
+- ⚖️ Estimar automaticamente idade (dias) e peso atual com base em visão computacional + profundidade.
 - 🐄 Sugerir raça provável (heurística) com confiança.
 - 📈 Exibir curva estimada de crescimento até 450 dias.
+- 📆 Projetar ganho de peso diário com faixa mínima/máxima para os próximos dias.
 - 🧠 Detectar backend disponível (PyTorch/MiDaS e YOLO opcional) com fallback automático.
 
 > A confiança do sistema é intencionalmente limitada em até **90%** para refletir estimativa realista e não substituir avaliação zootécnica profissional.
