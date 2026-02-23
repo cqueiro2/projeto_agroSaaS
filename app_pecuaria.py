@@ -337,11 +337,17 @@ class AppPecuariaCRUD:
 
     def calcular_performance(self, row):
         try:
-            dt_com = datetime.strptime(row["dt_com"], DATE_FMT)
-            dt_fim = datetime.strptime(row["dt_vend"], DATE_FMT) if row["dt_vend"] else datetime.now()
-            dias = max((dt_fim - dt_com).days, 0)
+            peso_inicial = float(row["peso_ini"])
 
-            peso = float(row["peso_ini"]) + (dias * self.taxas_gmd.get(row["tipo_confi"], 0))
+            # Regra solicitada: só calcular ganho de peso quando houver data de venda.
+            if row.get("dt_vend"):
+                dt_com = datetime.strptime(row["dt_com"], DATE_FMT)
+                dt_fim = datetime.strptime(row["dt_vend"], DATE_FMT)
+                dias = max((dt_fim - dt_com).days, 0)
+                peso = peso_inicial + (dias * self.taxas_gmd.get(row["tipo_confi"], 0))
+            else:
+                peso = peso_inicial
+
             arrobas = peso / 30.0
             lucro = (arrobas * float(row["val_arr_venda"])) - float(row["val_com"])
             return peso, arrobas, lucro
