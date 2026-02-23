@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_pdf import PdfPages
 
 try:
     from PIL import Image, ImageTk  # type: ignore
@@ -235,12 +236,14 @@ class AppPecuariaCRUD:
         ttk.Button(btns_v, text="🗑️ Excluir", command=self.db_excluir_vacina).pack(side="left", padx=2)
         ttk.Button(btns_v, text="✨ Limpar", command=self.limpar_campos_vacina).pack(side="left", padx=2)
 
-        search_box = ttk.LabelFrame(self.aba2, text="Pesquisar Histórico Sanitário")
+        search_box = ttk.LabelFrame(self.aba2, text="Pesquisar Vacinas e Histórico Sanitário")
         search_box.pack(fill="x", padx=10, pady=5)
-        ttk.Label(search_box, text="ID/N° Animal:").pack(side="left", padx=5)
+        ttk.Label(search_box, text="ID/N° Animal ou Vacina:").pack(side="left", padx=5)
         self.hist_busca_vac = ttk.Entry(search_box, width=20)
         self.hist_busca_vac.pack(side="left", padx=5)
+        ttk.Button(search_box, text="🔎 Filtrar Vacinas", command=self.filtrar_vacinas).pack(side="left", padx=5)
         ttk.Button(search_box, text="🔎 Buscar Histórico", command=self.buscar_historico_vacina).pack(side="left", padx=5)
+        ttk.Button(search_box, text="🔁 Limpar Filtro", command=self.limpar_pesquisa_vacina).pack(side="left", padx=5)
 
         self.tree_vac = ttk.Treeview(self.aba2, columns=("ID", "ID Animal", "Vacina/Marca", "Tipo", "Apli.", "Venc.", "Status"), show="headings")
         self.tree_vac.heading("ID", text="Ref.")
@@ -259,6 +262,8 @@ class AppPecuariaCRUD:
         for c in self.tree_hist_vac["columns"]:
             self.tree_hist_vac.heading(c, text=c)
         self.tree_hist_vac.pack(fill="x", padx=10, pady=(0, 10))
+
+        ttk.Button(self.aba2, text="📄 Gerar Relatório PDF", command=self.gerar_relatorio_pdf).pack(pady=(0, 10))
 
     def setup_aba_dashboard(self):
         self.dash_container = ttk.Frame(self.aba3)
@@ -450,6 +455,52 @@ class AppPecuariaCRUD:
             status = self.calcular_status_vacina(dt_venc)
             self.tree_vac.insert("", "end", values=(id_registro, id_animal, nome, tipo, dt_apl, dt_venc, status))
 
+    def filtrar_vacinas(self):
+        termo = self.hist_busca_vac.get().strip()
+
+        for i in self.tree_vac.get_children():
+            self.tree_vac.delete(i)
+
+        with self.db.get_conn() as conn:
+            if not termo:
+                res = conn.execute(
+                    """
+                    SELECT v.id, a.id, v.nome_vacina, v.tipo_vacina, v.dt_aplicacao, v.dt_vencimento
+                    FROM vacinas v
+                    JOIN animais a ON v.id_animal = a.id
+                    ORDER BY v.id DESC
+                    """
+                ).fetchall()
+            else:
+                like = f"%{termo}%"
+                res = conn.execute(
+                    """
+                    SELECT v.id, a.id, v.nome_vacina, v.tipo_vacina, v.dt_aplicacao, v.dt_vencimento
+                    FROM vacinas v
+                    JOIN animais a ON v.id_animal = a.id
+                    WHERE CAST(a.id AS TEXT) = ?
+                       OR a.n_animal LIKE ?
+                       OR v.nome_vacina LIKE ?
+                       OR v.tipo_vacina LIKE ?
+                    ORDER BY v.id DESC
+                    """,
+                    (termo, like, like, like),
+                ).fetchall()
+
+        for r in res:
+            id_registro, id_animal, nome, tipo, dt_apl, dt_venc = r
+            status = self.calcular_status_vacina(dt_venc)
+            self.tree_vac.insert("", "end", values=(id_registro, id_animal, nome, tipo, dt_apl, dt_venc, status))
+
+        if not res:
+            messagebox.showinfo("Pesquisa", "Nenhuma vacina encontrada para o filtro informado.")
+
+    def limpar_pesquisa_vacina(self):
+        self.hist_busca_vac.delete(0, tk.END)
+        for i in self.tree_hist_vac.get_children():
+            self.tree_hist_vac.delete(i)
+        self.atualizar_tabela_vacinas()
+
     def carregar_vacina_selecionada(self, _):
         sel = self.tree_vac.selection()
         if not sel:
@@ -480,20 +531,26 @@ class AppPecuariaCRUD:
             return
 
         with self.db.get_conn() as conn:
+            like = f"%{chave}%"
             rows = conn.execute(
                 """
                 SELECT h.id, h.data, h.tipo_evento, h.origem, h.descricao
                 FROM historico h
                 JOIN animais a ON a.id = h.id_animal
-                WHERE a.id = ? OR a.n_animal = ?
+                WHERE CAST(a.id AS TEXT) = ?
+                   OR a.n_animal LIKE ?
+                   OR h.descricao LIKE ?
                 ORDER BY h.id DESC
                 LIMIT 200
                 """,
-                (chave, chave),
+                (chave, like, like),
             ).fetchall()
 
         for row in rows:
             self.tree_hist_vac.insert("", "end", values=row)
+
+        if not rows:
+            messagebox.showinfo("Histórico", "Nenhum histórico encontrado para a busca informada.")
 
     def db_salvar_vacina(self):
         idx = self.vac_id_animal.get().strip()
@@ -569,6 +626,81 @@ class AppPecuariaCRUD:
         self.vac_dt_aplicacao.delete(0, tk.END)
         self.vac_dt_aplicacao.insert(0, datetime.now().strftime(DATE_FMT))
         self.vac_dt_vencimento.delete(0, tk.END)
+
+    def gerar_relatorio_pdf(self):
+        file_path = filedialog.asksaveasfilename(
+            title="Salvar relatório em PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF", "*.pdf")],
+            initialfile=f"relatorio_pecuaria_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+        )
+        if not file_path:
+            return
+
+        with self.db.get_conn() as conn:
+            df_animais = pd.read_sql_query("SELECT * FROM animais ORDER BY id", conn)
+            df_vac = pd.read_sql_query(
+                """
+                SELECT v.id, v.id_animal, v.nome_vacina, v.tipo_vacina, v.dt_aplicacao, v.dt_vencimento
+                FROM vacinas v
+                ORDER BY v.id DESC
+                """,
+                conn,
+            )
+
+        if df_animais.empty and df_vac.empty:
+            messagebox.showwarning("Relatório", "Não há dados para gerar o relatório.")
+            return
+
+        if not df_vac.empty:
+            df_vac["status"] = df_vac["dt_vencimento"].apply(self.calcular_status_vacina)
+
+        try:
+            with PdfPages(file_path) as pdf:
+                fig1, ax1 = plt.subplots(figsize=(8.27, 11.69))
+                ax1.axis("off")
+                linhas = [
+                    "RELATÓRIO PECUÁRIA",
+                    f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+                    "",
+                    f"Total de animais: {len(df_animais)}",
+                    f"Total de vacinas: {len(df_vac)}",
+                ]
+                if not df_animais.empty:
+                    total_invest = float(df_animais["val_com"].fillna(0).sum())
+                    linhas.append(f"Investimento total: {self.format_moeda(total_invest)}")
+                ax1.text(0.05, 0.95, "\n".join(linhas), va="top", fontsize=12)
+                pdf.savefig(fig1)
+                plt.close(fig1)
+
+                if not df_animais.empty:
+                    fig2 = plt.Figure(figsize=(10, 4), dpi=100)
+                    ax = fig2.add_subplot(111)
+                    lucro_por_manejo = []
+                    for _, row in df_animais.iterrows():
+                        lucro_por_manejo.append(self.calcular_performance(row)[2])
+                    df_tmp = df_animais.copy()
+                    df_tmp["lucro"] = lucro_por_manejo
+                    gp = df_tmp.groupby("tipo_confi")["lucro"].sum()
+                    gp.plot(kind="bar", ax=ax, color=["#2ecc71", "#3498db", "#e67e22"])
+                    ax.set_title("Lucro estimado por manejo (R$)")
+                    ax.set_ylabel("Reais")
+                    fig2.tight_layout()
+                    pdf.savefig(fig2)
+                    plt.close(fig2)
+
+                if not df_vac.empty:
+                    fig3 = plt.Figure(figsize=(10, 5), dpi=100)
+                    ax = fig3.add_subplot(111)
+                    df_vac["tipo_vacina"].value_counts().plot(kind="barh", ax=ax, color="#9b59b6")
+                    ax.set_title("Vacinas por tipo")
+                    fig3.tight_layout()
+                    pdf.savefig(fig3)
+                    plt.close(fig3)
+
+            messagebox.showinfo("Relatório", f"Relatório PDF gerado com sucesso:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Relatório", f"Falha ao gerar PDF: {e}")
 
     def gerar_dashboard(self):
         for w in self.fig_frame.winfo_children():
