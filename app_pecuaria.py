@@ -51,6 +51,7 @@ class Database:
                     tipo_confi TEXT NOT NULL,
                     val_arr_venda REAL NOT NULL DEFAULT 0,
                     dt_vend TEXT,
+                    status TEXT NOT NULL DEFAULT 'ATIVO',
                     desc_carac TEXT,
                     foto_path TEXT
                 );
@@ -83,11 +84,23 @@ class Database:
                 "ALTER TABLE vacinas ADD COLUMN tipo_vacina TEXT DEFAULT 'Não Informado'",
                 "ALTER TABLE vacinas ADD COLUMN dt_aplicacao TEXT DEFAULT ''",
                 "ALTER TABLE historico ADD COLUMN origem TEXT DEFAULT 'geral'",
+                "ALTER TABLE animais ADD COLUMN status TEXT NOT NULL DEFAULT 'ATIVO'",
             ):
                 try:
                     conn.execute(ddl)
                 except sqlite3.OperationalError:
                     pass
+
+            # Migração de compatibilidade: registros antigos com data de venda viram VENDIDO
+            conn.execute(
+                """
+                UPDATE animais
+                SET status = 'VENDIDO'
+                WHERE (status IS NULL OR status = '' OR status = 'ATIVO')
+                  AND dt_vend IS NOT NULL
+                  AND TRIM(dt_vend) <> ''
+                """
+            )
 
 
 class AppPecuariaCRUD:
@@ -151,14 +164,17 @@ class AppPecuariaCRUD:
         self.aba1 = ttk.Frame(self.notebook)
         self.aba2 = ttk.Frame(self.notebook)
         self.aba3 = ttk.Frame(self.notebook)
+        self.aba4 = ttk.Frame(self.notebook)
 
         self.notebook.add(self.aba1, text="🐂 Gestão de Animais")
         self.notebook.add(self.aba2, text="💉 Controle de Vacinas")
         self.notebook.add(self.aba3, text="📊 Dashboard Geral")
+        self.notebook.add(self.aba4, text="✅ Animais Vendidos")
 
         self.setup_aba_gestao()
         self.setup_aba_vacinas()
         self.setup_aba_dashboard()
+        self.setup_aba_vendidos()
 
     def setup_aba_gestao(self):
         frame = ttk.LabelFrame(self.aba1, text="Ficha Técnica do Animal")
@@ -195,6 +211,7 @@ class AppPecuariaCRUD:
         btns = ttk.Frame(self.aba1)
         btns.pack(pady=5)
         ttk.Button(btns, text="💾 Salvar Animal", command=self.db_salvar_animal).pack(side="left", padx=5)
+        ttk.Button(btns, text="✅ Marcar como Vendido", command=self.marcar_como_vendido).pack(side="left", padx=5)
         ttk.Button(btns, text="🗑️ Excluir", command=self.db_excluir_animal).pack(side="left", padx=5)
         ttk.Button(btns, text="✨ Limpar Campos", command=self.limpar_campos_animal).pack(side="left", padx=5)
 
@@ -272,6 +289,23 @@ class AppPecuariaCRUD:
         self.fig_frame = ttk.Frame(self.dash_container)
         self.fig_frame.pack(fill="both", expand=True)
 
+    def setup_aba_vendidos(self):
+        top = ttk.Frame(self.aba4)
+        top.pack(fill="x", padx=10, pady=8)
+        ttk.Label(top, text="Animais marcados como vendidos (dados preservados no banco)").pack(side="left")
+        ttk.Button(top, text="🔄 Atualizar", command=self.atualizar_tabela_vendidos).pack(side="right", padx=5)
+
+        self.tree_vendidos = ttk.Treeview(
+            self.aba4,
+            columns=("ID", "N°", "Raça", "Data Compra", "Data Venda", "Valor Compra", "@ Venda"),
+            show="headings",
+        )
+        for c in self.tree_vendidos["columns"]:
+            self.tree_vendidos.heading(c, text=c)
+        self.tree_vendidos.pack(fill="both", expand=True, padx=10, pady=5)
+
+        ttk.Button(self.aba4, text="↩ Reativar Animal Selecionado", command=self.reativar_animal_vendido).pack(pady=(0, 10))
+
     def selecionar_foto(self):
         path = filedialog.askopenfilename(filetypes=[("Imagens", "*.png;*.jpg;*.jpeg;*.gif")])
         if not path:
@@ -318,7 +352,7 @@ class AppPecuariaCRUD:
         for i in self.tree.get_children():
             self.tree.delete(i)
         with self.db.get_conn() as conn:
-            df = pd.read_sql_query("SELECT * FROM animais", conn)
+            df = pd.read_sql_query("SELECT * FROM animais WHERE status='ATIVO'", conn)
 
         for _, row in df.iterrows():
             peso, arroba, lucro = self.calcular_performance(row)
@@ -326,6 +360,7 @@ class AppPecuariaCRUD:
                 row["id"], row["n_animal"], f"{peso:.1f} kg", f"{arroba:.2f} @",
                 self.format_moeda(row["val_com"]), self.format_moeda(lucro)
             ))
+        self.atualizar_tabela_vendidos()
 
     def validar_animal(self, d):
         required = ["n_animal", "raca", "dt_com", "tipo_confi"]
@@ -351,18 +386,18 @@ class AppPecuariaCRUD:
                 if self.selected_id is None:
                     cur = conn.execute(
                         """INSERT INTO animais
-                        (n_animal, raca, dt_com, val_com, peso_ini, tipo_confi, val_arr_venda, dt_vend, cor, desc_carac, foto_path)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                        (n_animal, raca, dt_com, val_com, peso_ini, tipo_confi, val_arr_venda, dt_vend, status, cor, desc_carac, foto_path)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (d['n_animal'], d['raca'], d['dt_com'], self.parse_float(d['val_com']),
                          self.parse_float(d['peso_ini']), d['tipo_confi'],
-                         self.parse_float(d['val_arr_venda']), d['dt_vend'], d['cor'], d['desc_carac'], self.foto_path_atual)
+                         self.parse_float(d['val_arr_venda']), d['dt_vend'], 'ATIVO', d['cor'], d['desc_carac'], self.foto_path_atual)
                     )
                     self.registrar_evento(conn, cur.lastrowid, "Cadastro", "Animal cadastrado.", "animal")
                 else:
                     conn.execute(
                         """UPDATE animais SET
                         n_animal=?, raca=?, dt_com=?, val_com=?, peso_ini=?,
-                        tipo_confi=?, val_arr_venda=?, dt_vend=?, cor=?, desc_carac=?, foto_path=? WHERE id=?""",
+                        tipo_confi=?, val_arr_venda=?, dt_vend=?, status='ATIVO', cor=?, desc_carac=?, foto_path=? WHERE id=?""",
                         (d['n_animal'], d['raca'], d['dt_com'], self.parse_float(d['val_com']),
                          self.parse_float(d['peso_ini']), d['tipo_confi'],
                          self.parse_float(d['val_arr_venda']), d['dt_vend'], d['cor'], d['desc_carac'], self.foto_path_atual, self.selected_id)
@@ -375,6 +410,74 @@ class AppPecuariaCRUD:
             messagebox.showinfo("Sucesso", "Animal salvo com sucesso!")
         except Exception as e:
             messagebox.showerror("Erro de Cadastro", str(e))
+
+    def marcar_como_vendido(self):
+        if not self.selected_id:
+            messagebox.showwarning("Venda", "Selecione um animal para marcar como vendido.")
+            return
+
+        data_venda = self.inputs["dt_vend"].get().strip() or datetime.now().strftime(DATE_FMT)
+        if not self.parse_date(data_venda, required=True):
+            messagebox.showwarning("Venda", "Data de venda inválida. Use DD/MM/AAAA")
+            return
+
+        if not messagebox.askyesno("Confirmar Venda", f"Marcar animal {self.selected_id} como vendido?"):
+            return
+
+        try:
+            with self.db.get_conn() as conn:
+                conn.execute(
+                    "UPDATE animais SET status='VENDIDO', dt_vend=? WHERE id=?",
+                    (data_venda, self.selected_id),
+                )
+                self.registrar_evento(conn, int(self.selected_id), "Venda", f"Animal marcado como vendido em {data_venda}.", "animal")
+
+            self.atualizar_tabela()
+            self.atualizar_tabela_vacinas()
+            self.gerar_dashboard()
+            self.limpar_campos_animal()
+            messagebox.showinfo("Venda", "Animal movido para a aba de vendidos com sucesso.")
+        except Exception as e:
+            messagebox.showerror("Venda", f"Falha ao marcar venda: {e}")
+
+    def atualizar_tabela_vendidos(self):
+        if not hasattr(self, "tree_vendidos"):
+            return
+        for i in self.tree_vendidos.get_children():
+            self.tree_vendidos.delete(i)
+
+        with self.db.get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, n_animal, raca, dt_com, dt_vend, val_com, val_arr_venda
+                FROM animais
+                WHERE status='VENDIDO'
+                ORDER BY id DESC
+                """
+            ).fetchall()
+
+        for row in rows:
+            self.tree_vendidos.insert("", "end", values=row)
+
+    def reativar_animal_vendido(self):
+        sel = self.tree_vendidos.selection()
+        if not sel:
+            messagebox.showwarning("Reativar", "Selecione um animal vendido para reativar.")
+            return
+        item = self.tree_vendidos.item(sel[0])["values"]
+        animal_id = int(item[0])
+
+        if not messagebox.askyesno("Reativar", f"Reativar animal {animal_id} para status ATIVO?"):
+            return
+
+        with self.db.get_conn() as conn:
+            conn.execute("UPDATE animais SET status='ATIVO', dt_vend='' WHERE id=?", (animal_id,))
+            self.registrar_evento(conn, animal_id, "Reativação", "Animal reativado para gestão ativa.", "animal")
+
+        self.atualizar_tabela()
+        self.atualizar_tabela_vacinas()
+        self.gerar_dashboard()
+        messagebox.showinfo("Reativar", "Animal reativado com sucesso.")
 
     def carregar_campos_selecionados(self, _):
         sel = self.tree.selection()
@@ -639,6 +742,8 @@ class AppPecuariaCRUD:
 
         with self.db.get_conn() as conn:
             df_animais = pd.read_sql_query("SELECT * FROM animais ORDER BY id", conn)
+            df_ativos = pd.read_sql_query("SELECT * FROM animais WHERE status='ATIVO' ORDER BY id", conn)
+            df_vendidos = pd.read_sql_query("SELECT * FROM animais WHERE status='VENDIDO' ORDER BY id", conn)
             df_vac = pd.read_sql_query(
                 """
                 SELECT v.id, v.id_animal, v.nome_vacina, v.tipo_vacina, v.dt_aplicacao, v.dt_vencimento
@@ -663,7 +768,9 @@ class AppPecuariaCRUD:
                     "RELATÓRIO PECUÁRIA",
                     f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
                     "",
-                    f"Total de animais: {len(df_animais)}",
+                    f"Total de animais (geral): {len(df_animais)}",
+                    f"Animais ativos: {len(df_ativos)}",
+                    f"Animais vendidos: {len(df_vendidos)}",
                     f"Total de vacinas: {len(df_vac)}",
                 ]
                 if not df_animais.empty:
@@ -707,7 +814,7 @@ class AppPecuariaCRUD:
             w.destroy()
 
         with self.db.get_conn() as conn:
-            df_animais = pd.read_sql_query("SELECT * FROM animais", conn)
+            df_animais = pd.read_sql_query("SELECT * FROM animais WHERE status='ATIVO'", conn)
             df_vac = pd.read_sql_query("SELECT tipo_vacina, dt_vencimento FROM vacinas", conn)
 
         if df_animais.empty and df_vac.empty:
