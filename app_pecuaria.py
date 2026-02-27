@@ -8,9 +8,14 @@ try:
     import pandas as pd
 except (ModuleNotFoundError, ImportError):
     pd = None
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.backends.backend_pdf import PdfPages
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.backends.backend_pdf import PdfPages
+except (ModuleNotFoundError, ImportError):
+    plt = None
+    FigureCanvasTkAgg = None
+    PdfPages = None
 
 try:
     from PIL import Image, ImageTk  # type: ignore
@@ -933,8 +938,8 @@ class AppPecuariaCRUD:
         self.vac_dt_vencimento.delete(0, tk.END)
 
     def gerar_relatorio_pdf(self):
-        if pd is None:
-            messagebox.showwarning("Relatório", "Para gerar PDF, instale a dependência: pandas")
+        if pd is None or plt is None or PdfPages is None:
+            messagebox.showwarning("Relatório", "Para gerar PDF, instale as dependências: pandas e matplotlib")
             return
 
         file_path = filedialog.asksaveasfilename(
@@ -1019,8 +1024,8 @@ class AppPecuariaCRUD:
         for w in self.fig_frame.winfo_children():
             w.destroy()
 
-        if pd is None:
-            ttk.Label(self.fig_frame, text="Dashboard indisponível: instale pandas.").pack(pady=20)
+        if pd is None or plt is None or FigureCanvasTkAgg is None:
+            ttk.Label(self.fig_frame, text="Dashboard indisponível: instale pandas e matplotlib.").pack(pady=20)
             return
 
         with self.db.get_conn() as conn:
