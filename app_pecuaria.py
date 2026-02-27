@@ -254,6 +254,14 @@ class AppPecuariaCRUD:
             return default
         return str(val).strip()
 
+    def _row_to_values(self, row):
+        """Converte sqlite3.Row para tupla de valores para uso seguro em Treeview."""
+        if isinstance(row, sqlite3.Row):
+            return tuple(row[k] for k in row.keys())
+        if isinstance(row, (list, tuple)):
+            return tuple(row)
+        return (row,)
+
     def _ensure_matplotlib(self, need_tk: bool = False, need_pdf: bool = False) -> bool:
         global plt, FigureCanvasTkAgg, PdfPages
 
@@ -611,7 +619,16 @@ class AppPecuariaCRUD:
             ).fetchall()
 
         for row in rows:
-            self.tree_vendidos.insert("", "end", values=row)
+            valores = self._row_to_values(row)
+            self.tree_vendidos.insert("", "end", values=(
+                valores[0],
+                valores[1],
+                valores[2],
+                valores[3],
+                valores[4],
+                self.format_moeda(float(valores[5] or 0)),
+                self.format_moeda(float(valores[6] or 0)),
+            ))
 
     def reativar_animal_vendido(self):
         sel = self.tree_vendidos.selection()
@@ -901,7 +918,7 @@ class AppPecuariaCRUD:
             ).fetchall()
 
         for row in rows:
-            self.tree_hist_vac.insert("", "end", values=row)
+            self.tree_hist_vac.insert("", "end", values=self._row_to_values(row))
 
         if not rows:
             messagebox.showinfo("Histórico", "Nenhum histórico encontrado para a busca informada.")
