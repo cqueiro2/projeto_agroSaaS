@@ -190,6 +190,62 @@ class AppPecuariaCRUD:
 
         raise ValueError("Não foi possível ler o CSV com codificação suportada (utf-8/latin-1).")
 
+
+    def _iter_csv_chunks(self, file_path: str, chunk_size: int = 2000):
+        """Itera CSV em blocos para suportar grandes volumes sem sobrecarregar memória."""
+        if pd is not None:
+            for enc in ("utf-8", "latin-1"):
+                try:
+                    for chunk in pd.read_csv(file_path, sep=None, engine="python", encoding=enc, chunksize=chunk_size):
+                        yield chunk.to_dict(orient="records")
+                    return
+                except UnicodeDecodeError:
+                    continue
+            raise ValueError("Não foi possível ler o CSV com codificação suportada (utf-8/latin-1).")
+
+        rows = self._read_csv_file(file_path)
+        for i in range(0, len(rows), chunk_size):
+            yield rows[i:i + chunk_size]
+
+    def _normalize_csv_row(self, row: dict) -> dict:
+        """Normaliza cabeçalhos de CSV para chaves internas esperadas."""
+        alias = {
+            "nº animal": "n_animal",
+            "n° animal": "n_animal",
+            "numero animal": "n_animal",
+            "numero_animal": "n_animal",
+            "n animal": "n_animal",
+            "raça": "raca",
+            "data compra": "dt_com",
+            "data_compra": "dt_com",
+            "valor compra": "val_com",
+            "valor_compra": "val_com",
+            "peso inicial": "peso_ini",
+            "peso_inicial": "peso_ini",
+            "manejo": "tipo_confi",
+            "tipo manejo": "tipo_confi",
+            "tipo_manejo": "tipo_confi",
+            "valor @ venda": "val_arr_venda",
+            "valor arroba": "val_arr_venda",
+            "valor_arroba": "val_arr_venda",
+            "data venda": "dt_vend",
+            "data_venda": "dt_vend",
+            "descrição": "desc_carac",
+            "descricao": "desc_carac",
+            "id animal": "id_animal",
+            "vacina": "nome_vacina",
+            "nome vacina": "nome_vacina",
+            "tipo vacina": "tipo_vacina",
+            "data aplicação": "dt_aplicacao",
+            "data vencimento": "dt_vencimento",
+        }
+        normalized = {}
+        for k, v in row.items():
+            key = str(k).strip().lower().replace("-", " ")
+            key = alias.get(key, key.replace(" ", "_"))
+            normalized[key] = v
+        return normalized
+
     def _csv_value(self, row, key: str, default: str = "") -> str:
         val = row.get(key, default)
         if pd is not None and hasattr(pd, "isna") and pd.isna(val):
@@ -618,55 +674,52 @@ class AppPecuariaCRUD:
             self.gerar_dashboard()
 
     def processar_importacao_animais_csv(self, file_path: str):
-        df = self._read_csv_file(file_path)
-        if pd is not None and hasattr(df, "columns"):
-            colunas = set(df.columns)
-            iterator = df.iterrows()
-        else:
-            colunas = set(df[0].keys()) if df else set()
-            iterator = enumerate(df)
-
-        colunas_minimas = {"n_animal", "raca", "dt_com", "peso_ini", "tipo_confi"}
-        faltando = colunas_minimas - colunas
-        if faltando:
-            raise ValueError(f"CSV de animais inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
-
         inseridos = 0
         erros = []
+        colunas_minimas = {"n_animal", "raca", "dt_com", "peso_ini", "tipo_confi"}
+        valid_header = False
 
         with self.db.get_conn() as conn:
-            for idx, row in iterator:
-                linha = idx + 2
-                n_animal = self._csv_value(row, "n_animal")
-                raca = self._csv_value(row, "raca")
-                dt_com = self._csv_value(row, "dt_com")
-                peso_ini = self.parse_float(self._csv_value(row, "peso_ini", "0"))
-                tipo_confi = self._csv_value(row, "tipo_confi", "Pasto")
+            for chunk in self._iter_csv_chunks(file_path, chunk_size=3000):
+                to_insert = []
+                base_line = inseridos + len(erros) + 2
 
-                if not n_animal or not raca or not dt_com:
-                    erros.append(f"Linha {linha}: campos obrigatórios ausentes.")
-                    continue
+                if chunk:
+                    header_cols = set(self._normalize_csv_row(chunk[0]).keys())
+                    faltando = colunas_minimas - header_cols
+                    if faltando and not valid_header:
+                        raise ValueError(f"CSV de animais inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
+                    valid_header = True
 
-                if not self.parse_date(dt_com, required=True):
-                    erros.append(f"Linha {linha}: dt_com inválida ({dt_com}).")
-                    continue
+                for pos, original in enumerate(chunk):
+                    row = self._normalize_csv_row(original)
+                    linha = base_line + pos
+                    n_animal = self._csv_value(row, "n_animal")
+                    raca = self._csv_value(row, "raca")
+                    dt_com = self._csv_value(row, "dt_com")
+                    peso_ini = self.parse_float(self._csv_value(row, "peso_ini", "0"))
+                    tipo_confi = self._csv_value(row, "tipo_confi", "Pasto")
 
-                dt_vend = self._csv_value(row, "dt_vend")
-                if dt_vend and not self.parse_date(dt_vend, required=False):
-                    erros.append(f"Linha {linha}: dt_vend inválida ({dt_vend}).")
-                    continue
+                    if tipo_confi not in self.taxas_gmd:
+                        tipo_confi = "Pasto"
 
-                status = self._csv_value(row, "status", "")
-                if status not in {"ATIVO", "VENDIDO"}:
-                    status = "VENDIDO" if dt_vend else "ATIVO"
+                    if not n_animal or not raca or not dt_com:
+                        erros.append(f"Linha {linha}: campos obrigatórios ausentes.")
+                        continue
+                    if not self.parse_date(dt_com, required=True):
+                        erros.append(f"Linha {linha}: dt_com inválida ({dt_com}).")
+                        continue
 
-                cur = conn.execute(
-                    """
-                    INSERT INTO animais
-                    (n_animal, raca, cor, dt_com, val_com, peso_ini, tipo_confi, val_arr_venda, dt_vend, status, desc_carac, foto_path)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                    """,
-                    (
+                    dt_vend = self._csv_value(row, "dt_vend")
+                    if dt_vend and not self.parse_date(dt_vend, required=False):
+                        erros.append(f"Linha {linha}: dt_vend inválida ({dt_vend}).")
+                        continue
+
+                    status = self._csv_value(row, "status", "")
+                    if status not in {"ATIVO", "VENDIDO"}:
+                        status = "VENDIDO" if dt_vend else "ATIVO"
+
+                    to_insert.append((
                         n_animal,
                         raca,
                         self._csv_value(row, "cor"),
@@ -679,10 +732,24 @@ class AppPecuariaCRUD:
                         status,
                         self._csv_value(row, "desc_carac"),
                         self._csv_value(row, "foto_path"),
-                    ),
+                    ))
+
+                if to_insert:
+                    conn.executemany(
+                        """
+                        INSERT INTO animais
+                        (n_animal, raca, cor, dt_com, val_com, peso_ini, tipo_confi, val_arr_venda, dt_vend, status, desc_carac, foto_path)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                        """,
+                        to_insert,
+                    )
+                    inseridos += len(to_insert)
+
+            if inseridos:
+                conn.execute(
+                    "INSERT INTO historico (id_animal, tipo_evento, data, descricao, origem) VALUES (?,?,?,?,?)",
+                    (None, "Importação CSV", datetime.now().strftime("%d/%m/%Y %H:%M"), f"Importação em lote de animais: {inseridos} registros.", "animal"),
                 )
-                self.registrar_evento(conn, cur.lastrowid, "Importação CSV", "Animal importado via CSV.", "animal")
-                inseridos += 1
 
         return inseridos, erros
 
@@ -906,57 +973,65 @@ class AppPecuariaCRUD:
                 self.buscar_historico_vacina()
 
     def processar_importacao_vacinas_csv(self, file_path: str):
-        df = self._read_csv_file(file_path)
-        if pd is not None and hasattr(df, "columns"):
-            colunas = set(df.columns)
-            iterator = df.iterrows()
-        else:
-            colunas = set(df[0].keys()) if df else set()
-            iterator = enumerate(df)
-
         colunas_minimas = {"id_animal", "nome_vacina", "dt_vencimento"}
-        faltando = colunas_minimas - colunas
-        if faltando:
-            raise ValueError(f"CSV de vacinas inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
-
         inseridos = 0
         erros = []
+        valid_header = False
 
         with self.db.get_conn() as conn:
             animais_ids = {str(x[0]) for x in conn.execute("SELECT id FROM animais").fetchall()}
 
-            for idx, row in iterator:
-                linha = idx + 2
-                id_animal = self._csv_value(row, "id_animal")
-                nome_vacina = self._csv_value(row, "nome_vacina")
-                dt_vencimento = self._csv_value(row, "dt_vencimento")
+            for chunk in self._iter_csv_chunks(file_path, chunk_size=3000):
+                to_insert = []
+                base_line = inseridos + len(erros) + 2
 
-                if not id_animal or not nome_vacina or not dt_vencimento:
-                    erros.append(f"Linha {linha}: campos obrigatórios ausentes.")
-                    continue
-                if id_animal not in animais_ids:
-                    erros.append(f"Linha {linha}: animal {id_animal} não existe.")
-                    continue
-                if not self.parse_date(dt_vencimento, required=True):
-                    erros.append(f"Linha {linha}: dt_vencimento inválida ({dt_vencimento}).")
-                    continue
+                if chunk:
+                    header_cols = set(self._normalize_csv_row(chunk[0]).keys())
+                    faltando = colunas_minimas - header_cols
+                    if faltando and not valid_header:
+                        raise ValueError(f"CSV de vacinas inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
+                    valid_header = True
 
-                dt_aplicacao = self._csv_value(row, "dt_aplicacao")
-                if dt_aplicacao and not self.parse_date(dt_aplicacao, required=False):
-                    erros.append(f"Linha {linha}: dt_aplicacao inválida ({dt_aplicacao}).")
-                    continue
+                for pos, original in enumerate(chunk):
+                    row = self._normalize_csv_row(original)
+                    linha = base_line + pos
+                    id_animal = self._csv_value(row, "id_animal")
+                    nome_vacina = self._csv_value(row, "nome_vacina")
+                    dt_vencimento = self._csv_value(row, "dt_vencimento")
 
-                tipo_vacina = self._csv_value(row, "tipo_vacina", "Não Informado")
+                    if not id_animal or not nome_vacina or not dt_vencimento:
+                        erros.append(f"Linha {linha}: campos obrigatórios ausentes.")
+                        continue
+                    if id_animal not in animais_ids:
+                        erros.append(f"Linha {linha}: animal {id_animal} não existe.")
+                        continue
+                    if not self.parse_date(dt_vencimento, required=True):
+                        erros.append(f"Linha {linha}: dt_vencimento inválida ({dt_vencimento}).")
+                        continue
 
+                    dt_aplicacao = self._csv_value(row, "dt_aplicacao")
+                    if dt_aplicacao and not self.parse_date(dt_aplicacao, required=False):
+                        erros.append(f"Linha {linha}: dt_aplicacao inválida ({dt_aplicacao}).")
+                        continue
+
+                    tipo_vacina = self._csv_value(row, "tipo_vacina", "Não Informado")
+                    to_insert.append((id_animal, nome_vacina, tipo_vacina, dt_aplicacao, dt_vencimento))
+
+                if to_insert:
+                    conn.executemany(
+                        """
+                        INSERT INTO vacinas (id_animal, nome_vacina, tipo_vacina, dt_aplicacao, dt_vencimento)
+                        VALUES (?,?,?,?,?)
+                        """,
+                        to_insert,
+                    )
+                    inseridos += len(to_insert)
+
+            if inseridos:
                 conn.execute(
-                    """
-                    INSERT INTO vacinas (id_animal, nome_vacina, tipo_vacina, dt_aplicacao, dt_vencimento)
-                    VALUES (?,?,?,?,?)
-                    """,
-                    (id_animal, nome_vacina, tipo_vacina, dt_aplicacao, dt_vencimento),
+                    "INSERT INTO historico (id_animal, tipo_evento, data, descricao, origem) VALUES (?,?,?,?,?)",
+                    (None, "Importação CSV", datetime.now().strftime("%d/%m/%Y %H:%M"), f"Importação em lote de vacinas: {inseridos} registros.", "vacina"),
                 )
-                self.registrar_evento(conn, int(id_animal), "Importação CSV", f"Vacina importada via CSV: {nome_vacina}", "vacina")
-                inseridos += 1
 
         return inseridos, erros
 
