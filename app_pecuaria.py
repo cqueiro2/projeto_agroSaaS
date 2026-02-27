@@ -157,6 +157,18 @@ class AppPecuariaCRUD:
     def format_moeda(self, valor):
         return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+    def _read_csv_file(self, file_path: str) -> pd.DataFrame:
+        try:
+            return pd.read_csv(file_path, sep=None, engine="python", encoding="utf-8")
+        except UnicodeDecodeError:
+            return pd.read_csv(file_path, sep=None, engine="python", encoding="latin-1")
+
+    def _csv_value(self, row, key: str, default: str = "") -> str:
+        val = row.get(key, default)
+        if pd.isna(val):
+            return default
+        return str(val).strip()
+
     def setup_ui(self):
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True)
@@ -211,6 +223,7 @@ class AppPecuariaCRUD:
         btns = ttk.Frame(self.aba1)
         btns.pack(pady=5)
         ttk.Button(btns, text="💾 Salvar Animal", command=self.db_salvar_animal).pack(side="left", padx=5)
+        ttk.Button(btns, text="📥 Importar Animais CSV", command=self.importar_animais_csv).pack(side="left", padx=5)
         ttk.Button(btns, text="✅ Marcar como Vendido", command=self.marcar_como_vendido).pack(side="left", padx=5)
         ttk.Button(btns, text="🗑️ Excluir", command=self.db_excluir_animal).pack(side="left", padx=5)
         ttk.Button(btns, text="✨ Limpar Campos", command=self.limpar_campos_animal).pack(side="left", padx=5)
@@ -250,6 +263,7 @@ class AppPecuariaCRUD:
         btns_v = ttk.Frame(frame_v)
         btns_v.grid(row=1, column=4, columnspan=2, sticky="e", padx=5)
         ttk.Button(btns_v, text="💾 Salvar", command=self.db_salvar_vacina).pack(side="left", padx=2)
+        ttk.Button(btns_v, text="📥 Importar CSV", command=self.importar_vacinas_csv).pack(side="left", padx=2)
         ttk.Button(btns_v, text="🗑️ Excluir", command=self.db_excluir_vacina).pack(side="left", padx=2)
         ttk.Button(btns_v, text="✨ Limpar", command=self.limpar_campos_vacina).pack(side="left", padx=2)
 
@@ -525,6 +539,85 @@ class AppPecuariaCRUD:
             self.limpar_campos_animal()
             self.gerar_dashboard()
 
+    def processar_importacao_animais_csv(self, file_path: str):
+        df = self._read_csv_file(file_path)
+        colunas_minimas = {"n_animal", "raca", "dt_com", "peso_ini", "tipo_confi"}
+        faltando = colunas_minimas - set(df.columns)
+        if faltando:
+            raise ValueError(f"CSV de animais inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
+
+        inseridos = 0
+        erros = []
+
+        with self.db.get_conn() as conn:
+            for idx, row in df.iterrows():
+                linha = idx + 2
+                n_animal = self._csv_value(row, "n_animal")
+                raca = self._csv_value(row, "raca")
+                dt_com = self._csv_value(row, "dt_com")
+                peso_ini = self.parse_float(self._csv_value(row, "peso_ini", "0"))
+                tipo_confi = self._csv_value(row, "tipo_confi", "Pasto")
+
+                if not n_animal or not raca or not dt_com:
+                    erros.append(f"Linha {linha}: campos obrigatórios ausentes.")
+                    continue
+
+                if not self.parse_date(dt_com, required=True):
+                    erros.append(f"Linha {linha}: dt_com inválida ({dt_com}).")
+                    continue
+
+                dt_vend = self._csv_value(row, "dt_vend")
+                if dt_vend and not self.parse_date(dt_vend, required=False):
+                    erros.append(f"Linha {linha}: dt_vend inválida ({dt_vend}).")
+                    continue
+
+                status = self._csv_value(row, "status", "")
+                if status not in {"ATIVO", "VENDIDO"}:
+                    status = "VENDIDO" if dt_vend else "ATIVO"
+
+                cur = conn.execute(
+                    """
+                    INSERT INTO animais
+                    (n_animal, raca, cor, dt_com, val_com, peso_ini, tipo_confi, val_arr_venda, dt_vend, status, desc_carac, foto_path)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        n_animal,
+                        raca,
+                        self._csv_value(row, "cor"),
+                        dt_com,
+                        self.parse_float(self._csv_value(row, "val_com", "0")),
+                        peso_ini,
+                        tipo_confi,
+                        self.parse_float(self._csv_value(row, "val_arr_venda", "0")),
+                        dt_vend,
+                        status,
+                        self._csv_value(row, "desc_carac"),
+                        self._csv_value(row, "foto_path"),
+                    ),
+                )
+                self.registrar_evento(conn, cur.lastrowid, "Importação CSV", "Animal importado via CSV.", "animal")
+                inseridos += 1
+
+        return inseridos, erros
+
+    def importar_animais_csv(self):
+        file_path = filedialog.askopenfilename(title="Selecionar CSV de animais", filetypes=[("CSV", "*.csv")])
+        if not file_path:
+            return
+
+        try:
+            inseridos, erros = self.processar_importacao_animais_csv(file_path)
+            self.atualizar_tabela()
+            self.gerar_dashboard()
+
+            msg = f"Importação concluída. Animais inseridos: {inseridos}."
+            if erros:
+                msg += f"\nLinhas com erro: {len(erros)}."
+            messagebox.showinfo("Importação de Animais", msg)
+        except Exception as e:
+            messagebox.showerror("Importação de Animais", str(e))
+
     def limpar_campos_animal(self):
         self.selected_id = None
         self.foto_path_atual = None
@@ -726,6 +819,70 @@ class AppPecuariaCRUD:
                 self.hist_busca_vac.delete(0, tk.END)
                 self.hist_busca_vac.insert(0, idx)
                 self.buscar_historico_vacina()
+
+    def processar_importacao_vacinas_csv(self, file_path: str):
+        df = self._read_csv_file(file_path)
+        colunas_minimas = {"id_animal", "nome_vacina", "dt_vencimento"}
+        faltando = colunas_minimas - set(df.columns)
+        if faltando:
+            raise ValueError(f"CSV de vacinas inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
+
+        inseridos = 0
+        erros = []
+
+        with self.db.get_conn() as conn:
+            animais_ids = {str(x[0]) for x in conn.execute("SELECT id FROM animais").fetchall()}
+
+            for idx, row in df.iterrows():
+                linha = idx + 2
+                id_animal = self._csv_value(row, "id_animal")
+                nome_vacina = self._csv_value(row, "nome_vacina")
+                dt_vencimento = self._csv_value(row, "dt_vencimento")
+
+                if not id_animal or not nome_vacina or not dt_vencimento:
+                    erros.append(f"Linha {linha}: campos obrigatórios ausentes.")
+                    continue
+                if id_animal not in animais_ids:
+                    erros.append(f"Linha {linha}: animal {id_animal} não existe.")
+                    continue
+                if not self.parse_date(dt_vencimento, required=True):
+                    erros.append(f"Linha {linha}: dt_vencimento inválida ({dt_vencimento}).")
+                    continue
+
+                dt_aplicacao = self._csv_value(row, "dt_aplicacao")
+                if dt_aplicacao and not self.parse_date(dt_aplicacao, required=False):
+                    erros.append(f"Linha {linha}: dt_aplicacao inválida ({dt_aplicacao}).")
+                    continue
+
+                tipo_vacina = self._csv_value(row, "tipo_vacina", "Não Informado")
+
+                conn.execute(
+                    """
+                    INSERT INTO vacinas (id_animal, nome_vacina, tipo_vacina, dt_aplicacao, dt_vencimento)
+                    VALUES (?,?,?,?,?)
+                    """,
+                    (id_animal, nome_vacina, tipo_vacina, dt_aplicacao, dt_vencimento),
+                )
+                self.registrar_evento(conn, int(id_animal), "Importação CSV", f"Vacina importada via CSV: {nome_vacina}", "vacina")
+                inseridos += 1
+
+        return inseridos, erros
+
+    def importar_vacinas_csv(self):
+        file_path = filedialog.askopenfilename(title="Selecionar CSV de vacinas", filetypes=[("CSV", "*.csv")])
+        if not file_path:
+            return
+
+        try:
+            inseridos, erros = self.processar_importacao_vacinas_csv(file_path)
+            self.atualizar_tabela_vacinas()
+            self.gerar_dashboard()
+            msg = f"Importação concluída. Vacinas inseridas: {inseridos}."
+            if erros:
+                msg += f"\nLinhas com erro: {len(erros)}."
+            messagebox.showinfo("Importação de Vacinas", msg)
+        except Exception as e:
+            messagebox.showerror("Importação de Vacinas", str(e))
 
     def limpar_campos_vacina(self):
         self.vac_selected_id = None
