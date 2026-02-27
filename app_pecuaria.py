@@ -1,9 +1,13 @@
 import os
 import sqlite3
+import csv
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
-import pandas as pd
+try:
+    import pandas as pd
+except (ModuleNotFoundError, ImportError):
+    pd = None
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.backends.backend_pdf import PdfPages
@@ -32,6 +36,7 @@ class Database:
 
     def get_conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
@@ -157,15 +162,34 @@ class AppPecuariaCRUD:
     def format_moeda(self, valor):
         return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    def _read_csv_file(self, file_path: str) -> pd.DataFrame:
-        try:
-            return pd.read_csv(file_path, sep=None, engine="python", encoding="utf-8")
-        except UnicodeDecodeError:
-            return pd.read_csv(file_path, sep=None, engine="python", encoding="latin-1")
+    def _read_csv_file(self, file_path: str):
+        if pd is not None:
+            try:
+                return pd.read_csv(file_path, sep=None, engine="python", encoding="utf-8")
+            except UnicodeDecodeError:
+                return pd.read_csv(file_path, sep=None, engine="python", encoding="latin-1")
+
+        for enc in ("utf-8", "latin-1"):
+            try:
+                with open(file_path, "r", encoding=enc, newline="") as f:
+                    sample = f.read(2048)
+                    f.seek(0)
+                    try:
+                        dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+                    except csv.Error:
+                        dialect = csv.excel
+                    reader = csv.DictReader(f, dialect=dialect)
+                    return list(reader)
+            except UnicodeDecodeError:
+                continue
+
+        raise ValueError("Não foi possível ler o CSV com codificação suportada (utf-8/latin-1).")
 
     def _csv_value(self, row, key: str, default: str = "") -> str:
         val = row.get(key, default)
-        if pd.isna(val):
+        if pd is not None and hasattr(pd, "isna") and pd.isna(val):
+            return default
+        if val is None:
             return default
         return str(val).strip()
 
@@ -352,11 +376,12 @@ class AppPecuariaCRUD:
     def calcular_performance(self, row):
         try:
             peso_inicial = float(row["peso_ini"])
+            dt_vend = row["dt_vend"] if "dt_vend" in row.keys() else ""
 
             # Regra solicitada: só calcular ganho de peso quando houver data de venda.
-            if row.get("dt_vend"):
+            if dt_vend:
                 dt_com = datetime.strptime(row["dt_com"], DATE_FMT)
-                dt_fim = datetime.strptime(row["dt_vend"], DATE_FMT)
+                dt_fim = datetime.strptime(dt_vend, DATE_FMT)
                 dias = max((dt_fim - dt_com).days, 0)
                 peso = peso_inicial + (dias * self.taxas_gmd.get(row["tipo_confi"], 0))
             else:
@@ -372,9 +397,9 @@ class AppPecuariaCRUD:
         for i in self.tree.get_children():
             self.tree.delete(i)
         with self.db.get_conn() as conn:
-            df = pd.read_sql_query("SELECT * FROM animais WHERE status='ATIVO'", conn)
+            rows = conn.execute("SELECT * FROM animais WHERE status='ATIVO'").fetchall()
 
-        for _, row in df.iterrows():
+        for row in rows:
             peso, arroba, lucro = self.calcular_performance(row)
             self.tree.insert("", "end", values=(
                 row["id"], row["n_animal"], f"{peso:.1f} kg", f"{arroba:.2f} @",
@@ -541,8 +566,15 @@ class AppPecuariaCRUD:
 
     def processar_importacao_animais_csv(self, file_path: str):
         df = self._read_csv_file(file_path)
+        if pd is not None and hasattr(df, "columns"):
+            colunas = set(df.columns)
+            iterator = df.iterrows()
+        else:
+            colunas = set(df[0].keys()) if df else set()
+            iterator = enumerate(df)
+
         colunas_minimas = {"n_animal", "raca", "dt_com", "peso_ini", "tipo_confi"}
-        faltando = colunas_minimas - set(df.columns)
+        faltando = colunas_minimas - colunas
         if faltando:
             raise ValueError(f"CSV de animais inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
 
@@ -550,7 +582,7 @@ class AppPecuariaCRUD:
         erros = []
 
         with self.db.get_conn() as conn:
-            for idx, row in df.iterrows():
+            for idx, row in iterator:
                 linha = idx + 2
                 n_animal = self._csv_value(row, "n_animal")
                 raca = self._csv_value(row, "raca")
@@ -822,8 +854,15 @@ class AppPecuariaCRUD:
 
     def processar_importacao_vacinas_csv(self, file_path: str):
         df = self._read_csv_file(file_path)
+        if pd is not None and hasattr(df, "columns"):
+            colunas = set(df.columns)
+            iterator = df.iterrows()
+        else:
+            colunas = set(df[0].keys()) if df else set()
+            iterator = enumerate(df)
+
         colunas_minimas = {"id_animal", "nome_vacina", "dt_vencimento"}
-        faltando = colunas_minimas - set(df.columns)
+        faltando = colunas_minimas - colunas
         if faltando:
             raise ValueError(f"CSV de vacinas inválido. Colunas obrigatórias: {', '.join(sorted(colunas_minimas))}")
 
@@ -833,7 +872,7 @@ class AppPecuariaCRUD:
         with self.db.get_conn() as conn:
             animais_ids = {str(x[0]) for x in conn.execute("SELECT id FROM animais").fetchall()}
 
-            for idx, row in df.iterrows():
+            for idx, row in iterator:
                 linha = idx + 2
                 id_animal = self._csv_value(row, "id_animal")
                 nome_vacina = self._csv_value(row, "nome_vacina")
@@ -894,6 +933,10 @@ class AppPecuariaCRUD:
         self.vac_dt_vencimento.delete(0, tk.END)
 
     def gerar_relatorio_pdf(self):
+        if pd is None:
+            messagebox.showwarning("Relatório", "Para gerar PDF, instale a dependência: pandas")
+            return
+
         file_path = filedialog.asksaveasfilename(
             title="Salvar relatório em PDF",
             defaultextension=".pdf",
@@ -975,6 +1018,10 @@ class AppPecuariaCRUD:
     def gerar_dashboard(self):
         for w in self.fig_frame.winfo_children():
             w.destroy()
+
+        if pd is None:
+            ttk.Label(self.fig_frame, text="Dashboard indisponível: instale pandas.").pack(pady=20)
+            return
 
         with self.db.get_conn() as conn:
             df_animais = pd.read_sql_query("SELECT * FROM animais WHERE status='ATIVO'", conn)
