@@ -1,6 +1,8 @@
 import os
 import sqlite3
 import csv
+import sys
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from datetime import datetime
@@ -8,14 +10,9 @@ try:
     import pandas as pd
 except (ModuleNotFoundError, ImportError):
     pd = None
-try:
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    from matplotlib.backends.backend_pdf import PdfPages
-except (ModuleNotFoundError, ImportError):
-    plt = None
-    FigureCanvasTkAgg = None
-    PdfPages = None
+plt = None
+FigureCanvasTkAgg = None
+PdfPages = None
 
 try:
     from PIL import Image, ImageTk  # type: ignore
@@ -129,6 +126,9 @@ class AppPecuariaCRUD:
         self.vac_selected_id = None
         self.foto_path_atual = None
         self._foto_preview_ref = None
+        self._mpl_checked = False
+        self._mpl_available = False
+        self._mpl_error = ""
 
         self.setup_ui()
         self.atualizar_tabela()
@@ -197,6 +197,54 @@ class AppPecuariaCRUD:
         if val is None:
             return default
         return str(val).strip()
+
+    def _ensure_matplotlib(self, need_tk: bool = False, need_pdf: bool = False) -> bool:
+        global plt, FigureCanvasTkAgg, PdfPages
+
+        if not self._mpl_checked:
+            probe = subprocess.run(
+                [sys.executable, "-c", "import matplotlib; import matplotlib.pyplot"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            if probe.returncode != 0:
+                self._mpl_checked = True
+                self._mpl_available = False
+                self._mpl_error = "matplotlib indisponível ou instável neste ambiente"
+                return False
+
+            try:
+                import matplotlib.pyplot as _plt
+
+                plt = _plt
+                self._mpl_available = True
+            except Exception as exc:
+                self._mpl_available = False
+                self._mpl_error = str(exc)
+
+            self._mpl_checked = True
+
+        if not self._mpl_available or plt is None:
+            return False
+
+        if need_tk and FigureCanvasTkAgg is None:
+            try:
+                from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg as _FigureCanvasTkAgg
+
+                FigureCanvasTkAgg = _FigureCanvasTkAgg
+            except Exception:
+                return False
+
+        if need_pdf and PdfPages is None:
+            try:
+                from matplotlib.backends.backend_pdf import PdfPages as _PdfPages
+
+                PdfPages = _PdfPages
+            except Exception:
+                return False
+
+        return True
 
     def setup_ui(self):
         self.notebook = ttk.Notebook(self.root)
@@ -938,7 +986,7 @@ class AppPecuariaCRUD:
         self.vac_dt_vencimento.delete(0, tk.END)
 
     def gerar_relatorio_pdf(self):
-        if pd is None or plt is None or PdfPages is None:
+        if pd is None or not self._ensure_matplotlib(need_pdf=True):
             messagebox.showwarning("Relatório", "Para gerar PDF, instale as dependências: pandas e matplotlib")
             return
 
@@ -1024,7 +1072,7 @@ class AppPecuariaCRUD:
         for w in self.fig_frame.winfo_children():
             w.destroy()
 
-        if pd is None or plt is None or FigureCanvasTkAgg is None:
+        if pd is None or not self._ensure_matplotlib(need_tk=True):
             ttk.Label(self.fig_frame, text="Dashboard indisponível: instale pandas e matplotlib.").pack(pady=20)
             return
 
