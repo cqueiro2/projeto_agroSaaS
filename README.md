@@ -6,10 +6,10 @@ O **AgroSaaS** é uma plataforma voltada para o agronegócio, desenvolvida para 
 
 Este repositório inclui uma aplicação **Flask** com layout responsivo (mobile-first) para:
 - 📷 Receber foto do bovino.
-- ✂️ Segmentar automaticamente o animal (cor + profundidade + GrabCut).
+- ✂️ Detectar bovinos com saída limpa (somente resultado final: bbox/rótulo/score da classe bovino).
 - ⚖️ Estimar raça, idade (dias), peso (kg e arrobas) e faixa de variação.
 - 📈 Gerar projeção diária de peso e curva de crescimento.
-- 🧠 Detectar backend disponível (PyTorch/MiDaS e YOLO opcional) com fallback automático.
+- 🧠 YOLO com filtro de classe bovino e fallback heurístico, ocultando visualizações intermediárias.
 - 🗄️ Persistir análises em SQLite e carregar dataset inicial automaticamente.
 
 > A confiança das estimativas é limitada a até 90% e não substitui avaliação zootécnica/pesagem real.
@@ -38,3 +38,7 @@ Acesse: `http://localhost:5000`
 
 As predições de peso, idade e raça são **estimativas heurísticas** baseadas em imagem.
 Para decisão operacional, utilize pesagem em balança e validação de um profissional.
+
+
+### 🎬 Vídeo quadro a quadro
+Use `processar_frame_video_final(frame_bgr)` em `bovino_analise.py` para renderizar apenas o resultado final em cada frame.
