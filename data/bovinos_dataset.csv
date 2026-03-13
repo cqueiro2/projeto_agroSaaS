@@ -1,0 +1,9 @@
+id,tag,raca,idade_dias,peso_kg,origem
+1,BR001,Nelore,120,138.5,fazenda_a
+2,BR002,Angus,210,242.0,fazenda_a
+3,BR003,Girolando,95,112.7,fazenda_b
+4,BR004,Jersey,180,198.4,fazenda_b
+5,BR005,Nelore,300,304.2,fazenda_c
+6,BR006,Angus,75,96.3,fazenda_c
+7,BR007,Girolando,260,271.5,fazenda_d
+8,BR008,Jersey,145,167.9,fazenda_d

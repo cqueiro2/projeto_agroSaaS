@@ -12,3 +12,6 @@ temp-*
 .idea/
 .venv/
 .env/
+# Python cache e banco local
+__pycache__/
+data/bovino.db

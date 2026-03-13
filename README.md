@@ -10,6 +10,7 @@ Este repositório inclui uma aplicação **Flask** com layout responsivo (mobile
 - ⚖️ Estimar raça, idade (dias), peso (kg e arrobas) e faixa de variação.
 - 📈 Gerar projeção diária de peso e curva de crescimento.
 - 🧠 Detectar backend disponível (PyTorch/MiDaS e YOLO opcional) com fallback automático.
+- 🗄️ Persistir análises em SQLite e carregar dataset inicial automaticamente.
 
 > A confiança das estimativas é limitada a até 90% e não substitui avaliação zootécnica/pesagem real.
 
@@ -28,6 +29,9 @@ Acesse: `http://localhost:5000`
 - `templates/index.html`: interface responsiva.
 - `static/styles.css`: estilo mobile-first da aplicação.
 - `bovino_analise.py`: motor de visão computacional e estimativas.
+- `sqlite_store.py`: inicialização SQLite, importação de dataset e histórico.
+- `data/bovinos_dataset.csv`: dataset inicial de bovinos para popular o banco.
+- `data/bovino.db`: banco SQLite criado automaticamente em runtime.
 - `app_bovino.py`: versão Streamlit mantida para compatibilidade.
 
 ## ⚠️ Aviso técnico

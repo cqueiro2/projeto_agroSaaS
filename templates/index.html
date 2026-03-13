@@ -100,6 +100,27 @@
   </section>
   {% endif %}
 
+  <section class="card">
+    <h3>Histórico recente (SQLite)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Data</th><th>Raça</th><th>Idade</th><th>Peso (kg)</th><th>Conf. Peso</th></tr></thead>
+        <tbody>
+        {% for h in recentes %}
+          <tr>
+            <td>{{ h.id }}</td>
+            <td>{{ h.criado_em }}</td>
+            <td>{{ h.raca_estimada }}</td>
+            <td>{{ h.idade_estimada_dias }}</td>
+            <td>{{ h.peso_estimado }}</td>
+            <td>{{ (h.confianca_peso*100)|int }}%</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <footer class="bottom-nav">
     <span class="active">🏠 Início</span>
     <span>🕘 Histórico</span>

@@ -6,7 +6,12 @@ import io
 from flask import Flask, render_template, request
 from PIL import Image
 
+from sqlite_store import import_dataset_if_empty, init_db, list_recent_analyses, save_analysis
+
 app = Flask(__name__)
+
+init_db()
+import_dataset_if_empty()
 
 
 def _engine():
@@ -80,6 +85,7 @@ def index():
         "idade_manual": 120,
         "usar_idade_manual": False,
         "erro": None,
+        "recentes": list_recent_analyses(10),
     }
 
     if request.method == "POST":
@@ -111,6 +117,8 @@ def index():
                 }
                 context["projection"] = proj.round(2).to_dict(orient="records")
                 context["curve"] = curva.round(2).to_dict(orient="records")
+                save_analysis(analise)
+                context["recentes"] = list_recent_analyses(10)
         except Exception as exc:
             context["erro"] = f"Não foi possível processar no ambiente atual: {exc}"
 
