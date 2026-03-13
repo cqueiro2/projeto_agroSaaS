@@ -12,6 +12,7 @@ Este repositório agora inclui um aplicativo em **Streamlit** para:
 - 📈 Exibir curva estimada de crescimento até 450 dias.
 - 📆 Projetar ganho de peso diário com faixa mínima/máxima para os próximos dias.
 - 🧠 Detectar backend disponível (PyTorch/MiDaS e YOLO opcional) com fallback automático.
+- 🎨 Layout responsivo inspirado em interface mobile para uso em campo.
 
 > A confiança do sistema é intencionalmente limitada em até **90%** para refletir estimativa realista e não substituir avaliação zootécnica profissional.
 
