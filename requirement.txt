@@ -1,4 +1,4 @@
-﻿anyio
+anyio
 certifi
 charset-normalizer
 click
@@ -44,3 +44,6 @@ tqdm
 typer-slim
 typing_extensions
 urllib3
+pandas
+streamlit
+flask
