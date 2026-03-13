@@ -66,9 +66,13 @@
       <table>
         <thead><tr><th>#</th><th>Classe</th><th>Confiança</th><th>BBox [x1,y1,x2,y2]</th></tr></thead>
         <tbody>
+        {% if result.deteccoes_finais|length == 0 %}
+          <tr><td colspan="4">Nenhum bovino detectado com confiança suficiente.</td></tr>
+        {% else %}
         {% for d in result.deteccoes_finais %}
           <tr><td>{{ loop.index }}</td><td>{{ d.classe }}</td><td>{{ '%.2f'|format(d.confianca) }}</td><td>{{ d.bbox }}</td></tr>
         {% endfor %}
+        {% endif %}
         </tbody>
       </table>
     </div>

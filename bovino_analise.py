@@ -32,6 +32,17 @@ class AnaliseBovino:
     deteccoes_finais: list[dict[str, Any]]
 
 
+def _clamp_bbox(x1: int, y1: int, x2: int, y2: int, w: int, h: int) -> list[int]:
+    x1 = int(max(0, min(x1, w - 1)))
+    y1 = int(max(0, min(y1, h - 1)))
+    x2 = int(max(0, min(x2, w - 1)))
+    y2 = int(max(0, min(y2, h - 1)))
+    if x2 <= x1:
+        x2 = min(w - 1, x1 + 1)
+    if y2 <= y1:
+        y2 = min(h - 1, y1 + 1)
+    return [x1, y1, x2, y2]
+
 @lru_cache(maxsize=1)
 def detectar_backends() -> dict:
     info = {
@@ -93,7 +104,7 @@ def _segmentacao_fallback(imagem_bgr: np.ndarray) -> tuple[np.ndarray, list[dict
             {
                 "classe": "bovino",
                 "confianca": conf,
-                "bbox": [int(x), int(y), int(x + bw), int(y + bh)],
+                "bbox": _clamp_bbox(int(x), int(y), int(x + bw), int(y + bh), w, h),
             }
         )
 
@@ -138,7 +149,7 @@ def detectar_bovinos_final(imagem_bgr: np.ndarray, conf_min: float = 0.25) -> tu
                         {
                             "classe": "bovino",
                             "confianca": conf,
-                            "bbox": [x1, y1, x2, y2],
+                            "bbox": _clamp_bbox(x1, y1, x2, y2, w, h),
                         }
                     )
                     cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)

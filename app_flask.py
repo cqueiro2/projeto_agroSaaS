@@ -24,7 +24,10 @@ def bytes_to_bgr(file_bytes: bytes):
     import cv2
     import numpy as np
 
-    image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+    try:
+        image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+    except Exception:
+        return None
     return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
 
@@ -81,6 +84,10 @@ def index():
             analisar_bovino, _, _, gerar_projecao_peso_diaria = _engine()
             if file and file.filename:
                 imagem_bgr = bytes_to_bgr(file.read())
+                if imagem_bgr is None:
+                    context["erro"] = "Arquivo inválido. Envie uma imagem JPG/PNG válida."
+                    return render_template("index.html", **context)
+
                 idade_entrada = idade_manual if usar_idade_manual else None
                 analise = analisar_bovino(imagem_bgr, idade_entrada)
                 proj = gerar_projecao_peso_diaria(analise.peso_estimado, analise.idade_estimada_dias, horizonte_dias=30)
