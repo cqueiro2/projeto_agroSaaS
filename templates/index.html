@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bovino Vision AI</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <header class="topbar card">
+    <div class="brand">
+      <div class="logo">📈</div>
+      <div>
+        <h1>Bovino Vision AI</h1>
+        <p>MONITORAMENTO INTELIGENTE</p>
+      </div>
+    </div>
+    <div class="avatar">👤</div>
+  </header>
+
+  <section class="hero card">
+    <div class="badge">● SISTEMA PRONTO PARA ANÁLISE</div>
+    <p>Envie uma imagem para análise automática de raça, idade, peso e projeção diária.</p>
+  </section>
+
+  <main class="layout">
+    <section class="card">
+      <h2>Nova análise</h2>
+      <form method="post" enctype="multipart/form-data" class="form-grid">
+        <label class="file-label">
+          Foto do bovino
+          <input type="file" name="imagem" accept="image/png,image/jpeg" required>
+        </label>
+
+        <label class="check-row">
+          <input type="checkbox" name="usar_idade_manual" {% if usar_idade_manual %}checked{% endif %}> Informar idade manualmente
+        </label>
+
+        <label>
+          Idade manual (dias)
+          <input type="number" name="idade_manual" min="0" max="450" value="{{ idade_manual }}">
+        </label>
+
+        <button type="submit">Analisar imagem</button>
+      </form>
+    </section>
+
+    <aside class="card">
+      <h3>Backends</h3>
+      <ul class="backend-list">
+        <li><strong>Segmentação:</strong> {{ info.backend_segmentacao }}</li>
+        <li><strong>Profundidade:</strong> {{ info.backend_profundidade }}</li>
+        <li><strong>PyTorch:</strong> {{ 'Sim' if info.torch else 'Não' }}</li>
+        <li><strong>YOLO:</strong> {{ 'Sim' if info.yolo else 'Não' }}</li>
+      </ul>
+      <small>Execução: <code>python app_flask.py</code></small>
+    </aside>
+  </main>
+
+  {% if erro %}<section class="card"><strong>Aviso:</strong> {{ erro }}</section>{% endif %}
+
+{% if result %}
+  <section class="card">
+    <h2>Resultado automático</h2>
+    <ul class="result-list">
+      <li><strong>Raça estimada:</strong> {{ result.raca_estimada }}</li>
+      <li><strong>Idade estimada (dias):</strong> {{ result.idade_estimada_dias }}</li>
+      <li><strong>Peso estimado:</strong> {{ result.peso_estimado }} kg / {{ result.peso_arroba }} arrobas</li>
+      <li><strong>Faixa de variação:</strong> {{ result.faixa_min_kg }} - {{ result.faixa_max_kg }} kg</li>
+      <li><strong>Projeção diária:</strong> {{ result.ganho_dia_kg }} kg/dia (média)</li>
+      <li><strong>Confiança:</strong> Raça {{ (result.confianca_raca*100)|int }}% | Idade {{ (result.confianca_idade*100)|int }}% | Peso {{ (result.confianca_peso*100)|int }}%</li>
+    </ul>
+  </section>
+
+  <section class="card grid-2">
+    <figure><img src="{{ images.original }}" alt="Original"><figcaption>Imagem original</figcaption></figure>
+    <figure><img src="{{ images.mask }}" alt="Máscara"><figcaption>Máscara</figcaption></figure>
+    <figure><img src="{{ images.segmentada }}" alt="Segmentada"><figcaption>Animal isolado</figcaption></figure>
+    <figure><img src="{{ images.profundidade }}" alt="Profundidade"><figcaption>Mapa de profundidade</figcaption></figure>
+    <figure class="full"><img src="{{ images.overlay }}" alt="Overlay"><figcaption>Overlay da área detectada</figcaption></figure>
+  </section>
+
+  <section class="card">
+    <h3>Projeção de peso (30 dias)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dia</th><th>Peso (kg)</th><th>Mín (kg)</th><th>Máx (kg)</th></tr></thead>
+        <tbody>
+        {% for row in projection[:10] %}
+          <tr>
+            <td>{{ row['Dia futuro'] }}</td>
+            <td>{{ row['Peso estimado (kg)'] }}</td>
+            <td>{{ row['Peso mínimo (kg)'] }}</td>
+            <td>{{ row['Peso máximo (kg)'] }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <footer class="bottom-nav">
+    <span class="active">🏠 Início</span>
+    <span>🕘 Histórico</span>
+    <span>📊 Análise</span>
+    <span>⚙️ Ajustes</span>
+  </footer>
+</body>
+</html>

@@ -2,42 +2,35 @@
 
 O **AgroSaaS** é uma plataforma voltada para o agronegócio, desenvolvida para facilitar a gestão, análise e automação de processos agrícolas.
 
-## 🚀 Módulo Bovino (imagem + idade até 450 dias)
+## 🚀 Módulo Bovino (Flask + interface responsiva)
 
-Este repositório agora inclui um aplicativo em **Streamlit** para:
-- 📷 Receber foto do bezerro/bovino.
-- ✂️ Segmentar automaticamente o corpo do animal (cor + profundidade + GrabCut).
-- ⚖️ Estimar automaticamente idade (dias) e peso atual com base em visão computacional + profundidade.
-- 🐄 Sugerir raça provável (heurística) com confiança.
-- 📈 Exibir curva estimada de crescimento até 450 dias.
-- 📆 Projetar ganho de peso diário com faixa mínima/máxima para os próximos dias.
+Este repositório inclui uma aplicação **Flask** com layout responsivo (mobile-first) para:
+- 📷 Receber foto do bovino.
+- ✂️ Segmentar automaticamente o animal (cor + profundidade + GrabCut).
+- ⚖️ Estimar raça, idade (dias), peso (kg e arrobas) e faixa de variação.
+- 📈 Gerar projeção diária de peso e curva de crescimento.
 - 🧠 Detectar backend disponível (PyTorch/MiDaS e YOLO opcional) com fallback automático.
-- 🎨 Layout responsivo inspirado em interface mobile para uso em campo.
 
-> A confiança do sistema é intencionalmente limitada em até **90%** para refletir estimativa realista e não substituir avaliação zootécnica profissional.
+> A confiança das estimativas é limitada a até 90% e não substitui avaliação zootécnica/pesagem real.
 
-## ▶️ Como executar
+## ▶️ Como executar (Flask)
 
 ```bash
 pip install -r requirement.txt
-streamlit run app_bovino.py
-# ou, para compatibilidade:
-python bovino_anlise.py
+python app_flask.py
 ```
 
-Abra o endereço exibido no terminal (normalmente `http://localhost:8501`).
-
-> Execução recomendada: `streamlit run app_bovino.py`.
+Acesse: `http://localhost:5000`
 
 ## 📁 Estrutura principal
 
-- `app_bovino.py`: interface web Streamlit para análise bovina.
-- `bovino_analise.py`: motor de visão computacional (segmentação + peso + raça).
-- `1_DimensioImag/`: scripts de redimensionamento de imagens.
-- `2_depthImag/`: experimentos com mapa de profundidade.
-- `3_segmentarImg/`: scripts de segmentação de imagem.
+- `app_flask.py`: aplicação Flask (backend + rotas).
+- `templates/index.html`: interface responsiva.
+- `static/styles.css`: estilo mobile-first da aplicação.
+- `bovino_analise.py`: motor de visão computacional e estimativas.
+- `app_bovino.py`: versão Streamlit mantida para compatibilidade.
 
 ## ⚠️ Aviso técnico
 
-As predições de peso e raça são **estimativas heurísticas** baseadas em imagem e idade informada.
+As predições de peso, idade e raça são **estimativas heurísticas** baseadas em imagem.
 Para decisão operacional, utilize pesagem em balança e validação de um profissional.
