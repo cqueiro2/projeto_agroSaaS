@@ -11,6 +11,7 @@ Este repositório inclui uma aplicação **Flask** com layout responsivo (mobile
 - 📈 Gerar projeção diária de peso e curva de crescimento.
 - 🧠 YOLO com filtro de classe bovino e fallback heurístico, ocultando visualizações intermediárias.
 - 🗄️ Persistir análises em SQLite e carregar dataset inicial automaticamente.
+- 🧾 CRUD completo (create/read/update/delete) integrado ao histórico de análises.
 
 > A confiança das estimativas é limitada a até 90% e não substitui avaliação zootécnica/pesagem real.
 
@@ -22,6 +23,13 @@ python app_flask.py
 ```
 
 Acesse: `http://localhost:5000`
+
+### Rotas REST
+- `GET /read` — listar histórico de análises
+- `POST /create` — criar/salvar análise automaticamente
+- `POST /update/<id>` — atualizar correções manuais
+- `POST /delete/<id>` — remover análise
+- `GET /read/<id>` — recuperar registro individual em JSON
 
 ## 📁 Estrutura principal
 
