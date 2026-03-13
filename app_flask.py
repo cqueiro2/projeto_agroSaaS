@@ -17,6 +17,7 @@ def _engine():
 
 def bytes_to_bgr(file_bytes: bytes) -> np.ndarray:
     import cv2
+    import numpy as np
 
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
